@@ -26,10 +26,6 @@ IO_API_URL = f"http://{IO_API_HOST}:{IO_API_PORT}"
 AUTH_API_URL = f"http://{AUTH_API_HOST}:{AUTH_API_PORT}"
 
 app = Flask(__name__)
-app.secret_key = os.getenv(
-    "FLASK_SECRET_KEY", "a_secure_random_secret_key_for_steem_api"
-)
-
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
 )
