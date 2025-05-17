@@ -1,0 +1,54 @@
+name: "Deploy updates to K8s cluster"
+run-name: "Deploy updates to K8s cluster"
+on:
+    push:
+        tags:
+            - "v*.*.*"
+env:
+    IMAGE_NAME: "steem-api"
+    DOCKER_USER: ${{ secrets.DOCKER_USER }}
+    DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+    UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
+jobs:
+    build_push:
+        runs-on: steem-runner
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+            - name: Get tag from refs
+              run: |
+                  echo "IMAGE_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+            - name: Build & push Docker image
+              uses: mr-smithers-excellent/docker-build-push@v6
+              with:
+                  image: "${{ env.DOCKER_USER }}/${{ env.IMAGE_NAME }}"
+                  tags: "${{ env.IMAGE_TAG }}"
+                  registry: docker.io
+                  directory: IOService
+                  dockerfile: IOService/Dockerfile
+                  username: ${{ secrets.DOCKER_USER }}
+                  password: ${{ secrets.DOCKER_PASSWORD }}
+    patch_deployment:
+        runs-on: steem-runner
+        needs: build_push
+        env:
+            CONTENT_TYPE_HDR: "Content-Type: application/json-patch+json"
+            AUTHORIZATION_HDR: "Authorization: Bearer ${{ secrets.UPDATER_TOKEN }}"
+            K8S_API_URL: "https://kubernetes.default:443/apis/apps/v1/namespaces/default/deployments/steem-api?fieldManager=kubectl-patch"
+        steps:
+            - name: Get tag from refs
+              run: |
+                  echo "IMAGE_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+            - name: Patch the deployment
+              run: |
+                  curl -X PATCH \
+                      -H "${{ env.CONTENT_TYPE_HDR }}" \
+                      -H "${{ env.AUTHORIZATION_HDR }}" \
+                      --data '[
+                          {
+                              "op": "replace",
+                              "path": "/spec/template/spec/containers/0/image",
+                              "value": "${{ env.DOCKER_USER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+                          }
+                      ]' \
+                      "${{ env.K8S_API_URL }}" --insecure --fail > /dev/null
